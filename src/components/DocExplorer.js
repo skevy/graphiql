@@ -49,10 +49,21 @@ export class DocExplorer extends React.Component {
     );
   }
 
+  _getTypeLink(type) {
+    return type.ofType ? (
+      <span>
+        [
+        <a className="doc-type">{type.ofType.name}</a>
+        ]
+      </span>
+    ) : <a className="doc-type">{type.name}</a>;
+  }
+
   _renderTypeFields(type) {
+    var _getTypeLink = this._getTypeLink;
     function renderField(field, from) {
       return (
-        <div>
+        <div className="doc-category-item">
           <a className="doc-call-sign"
             data-from-type-name={from.name}
             href="javascript:void(0)"
@@ -60,9 +71,7 @@ export class DocExplorer extends React.Component {
             {field.name}
           </a>
           <span> : </span>
-          <a className="doc-type" href="javascript:void(0)">
-            {field.type.ofType ? field.type.ofType.name : field.type.name}
-          </a>
+          {_getTypeLink(field.type)}
         </div>
       );
     }
@@ -83,7 +92,7 @@ export class DocExplorer extends React.Component {
   _renderTypeValues(type) {
     function renderValue(value) {
       return (
-        <div>
+        <div className="doc-category-item">
           <span className="doc-value-name">{value.name}</span>
         </div>
       );
@@ -172,7 +181,7 @@ export class DocExplorer extends React.Component {
 
     if (type instanceof GraphQLInterfaceType) {
       typesDef = (
-        <div className="doc-call-def">
+        <div className="doc-category">
           <div className="doc-category-title">
             implemented by
           </div>
@@ -183,7 +192,7 @@ export class DocExplorer extends React.Component {
 
     if (type.getInterfaces && type.getInterfaces().length > 0) {
       typesDef = (
-        <div className="doc-call-def">
+        <div className="doc-category">
           <div className="doc-category-title">
             interfaces
           </div>
@@ -194,7 +203,7 @@ export class DocExplorer extends React.Component {
 
     if (type.getFields) {
       fieldsDef = (
-        <div className="doc-type-fields">
+        <div className="doc-category">
           <div className="doc-category-title">
             fields
           </div>
@@ -204,7 +213,7 @@ export class DocExplorer extends React.Component {
     }
     if (type.getValues) {
       valuesDef = (
-        <div className="doc-type-values">
+        <div className="doc-category">
           <div className="doc-category-title">
             values
           </div>
@@ -219,7 +228,7 @@ export class DocExplorer extends React.Component {
           {type.name}
         </div>
         <div className="doc-type-description">
-          {type.description}
+          {type.description || 'Self descriptive.'}
         </div>
         {typesDef}
         {fieldsDef}
@@ -237,9 +246,7 @@ export class DocExplorer extends React.Component {
         argsJSX.push(
           <div>
             <div className="doc-arg-title">
-              <span className="doc-arg-type">
-                {arg.type.ofType ? arg.type.ofType.name : arg.type.name}
-              </span>
+              {this._getTypeLink(arg.type)}
               {" "}
               <span className="doc-arg-name">{arg.name}</span>
             </div>
