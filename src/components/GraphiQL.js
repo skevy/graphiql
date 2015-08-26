@@ -36,6 +36,16 @@ import { fillLeafs } from '../utility/fillLeafs';
  *   - defaultQuery: an optional GraphQL string to use instead of a
  *     blank screen when a query was not found in the local cache.
  *
+ *   - variables: an optional GraphQL string to use as the initial displayed
+ *     query variables, if not provided, the local storage will be used.
+ *
+ *   - onEditQuery: an optional function which will be called when the Query
+ *     editor changes. The argument to the function will be the query string.
+ *
+ *   - onEditVariables: an optional function which will be called when the Query
+ *     varible editor changes. The argument to the function will be the
+ *     variables string.
+ *
  *   - getDefaultFieldNames: an optional function used to provide default fields
  *     to non-leaf fields which invalidly lack a selection set.
  *     Accepts a GraphQLType instance and returns an array of field names.
@@ -51,50 +61,12 @@ import { fillLeafs } from '../utility/fillLeafs';
  *
  */
 export class GraphiQL extends React.Component {
-  constructor(props) {
-    super();
-
-    // Ensure props are correct
-    if (typeof props.fetcher !== 'function') {
-      throw new TypeError('GraphiQL requires a fetcher function.');
-    }
-
-    var storage = window.localStorage;
-
-    // Determine the initial query to display.
-    var query =
-      props.query ||
-      storage.getItem('query') ||
-      props.defaultQuery ||
-      defaultQuery;
-
-    // Initialize state
-    this.state = {
-      schema: props.schema,
-      query,
-      response: null,
-      editorFlex: storage.getItem('editorFlex') || 1,
-      variableEditorOpen:
-        storage.getItem('variableEditorOpen') === 'true' || false,
-      variableEditorHeight: storage.getItem('variableEditorHeight') || 200,
-      typeToExplore: null,
-    };
-
-    this.variablesString = storage.getItem('variables');
-
-    // Ensure only the last executed editor query is rendered.
-    this.editorQueryID = 0;
-  }
-
-  componentWillReceiveProps(nextProps) {
-    if (nextProps.query && nextProps.query !== this.state.query) {
-      this.setState({ query: nextProps.query });
-    }
-  }
 
   /**
    * Inspect the query, automatically filling in selection sets for non-leaf
    * fields which do not yet have them.
+   *
+   * @public
    */
   autoCompleteLeafs() {
     var { insertions, result } = fillLeafs(
@@ -119,22 +91,56 @@ export class GraphiQL extends React.Component {
     }
   }
 
-  _fetchQuery(query, variables, cb) {
-    this.props.fetcher({ query, variables }).then(cb).catch(error => {
-      this.setState({ response: JSON.stringify(error, null, 2) });
-    });
+  // Lifecycle
+
+  constructor(props) {
+    super();
+
+    // Ensure props are correct
+    if (typeof props.fetcher !== 'function') {
+      throw new TypeError('GraphiQL requires a fetcher function.');
+    }
+
+    var storage = window.localStorage;
+
+    // Determine the initial query to display.
+    var query =
+      props.query ||
+      storage.getItem('query') ||
+      props.defaultQuery ||
+      defaultQuery;
+
+    // Determine the initial variables to display.
+    var variables = props.variables || storage.getItem('variables');
+
+    // Initialize state
+    this.state = {
+      schema: props.schema,
+      query,
+      variables,
+      response: null,
+      editorFlex: storage.getItem('editorFlex') || 1,
+      variableEditorOpen: Boolean(variables),
+      variableEditorHeight: storage.getItem('variableEditorHeight') || 200,
+      typeToExplore: null,
+    };
+
+    // Ensure only the last executed editor query is rendered.
+    this._editorQueryID = 0;
   }
 
-  _runEditorQuery() {
-    this.editorQueryID++;
-    var queryID = this.editorQueryID;
-
-    this.autoCompleteLeafs();
-
-    this._fetchQuery(this.state.query, this.variablesString, result => {
-      if (queryID === this.editorQueryID) {
-        this.setState({ response: JSON.stringify(result, null, 2) });
-      }
+  componentWillReceiveProps(nextProps) {
+    var nextQuery = this.state.query;
+    var nextVariables = this.state.variables;
+    if (nextProps.query && nextProps.query !== nextQuery) {
+      nextQuery = nextProps.query;
+    }
+    if (nextProps.variables && nextProps.variables !== nextVariables) {
+      nextVariables = nextProps.variables;
+    }
+    this.setState({
+      query: nextQuery,
+      variables: nextVariables
     });
   }
 
@@ -147,6 +153,122 @@ export class GraphiQL extends React.Component {
           this.setState({ schema: buildClientSchema(result.data) });
         }
       });
+    }
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    // When UI-altering state changes, simulate a window resize event so all
+    // CodeMirror instances become properly rendered.
+    if (this.state.variableEditorOpen !== prevState.variableEditorOpen ||
+        this.state.variableEditorHeight !== prevState.variableEditorHeight) {
+      window.dispatchEvent(new Event('resize'));
+    }
+  }
+
+  render() {
+    var children = [];
+    React.Children.forEach(this.props.children, child => {
+      children.push(child);
+    });
+
+    var logo = find(children, child => child.type === GraphiQL.Logo) ||
+      <GraphiQL.Logo />;
+
+    var toolbar = find(children, child => child.type === GraphiQL.Toolbar);
+    var footer = find(children, child => child.type === GraphiQL.Footer);
+
+    var variableOpen = this.state.variableEditorOpen;
+    var variableHeight = variableOpen ? this.state.variableEditorHeight : null;
+
+    var queryWrapStyle = {
+      WebkitFlex: this.state.editorFlex,
+      flex: this.state.editorFlex,
+    };
+
+    return (
+      <div id="graphiql-container">
+        <div className="topBar">
+          {logo}
+          <ExecuteButton onClick={this._runEditorQuery.bind(this)} />
+          {toolbar}
+        </div>
+        <div
+          ref="editorBar"
+          className="editorBar"
+          onMouseDown={this._onResizeStart.bind(this)}
+        >
+          <div className="queryWrap" style={queryWrapStyle}>
+            <QueryEditor
+              ref="queryEditor"
+              schema={this.state.schema}
+              value={this.state.query}
+              onEdit={this._onEditQuery.bind(this)}
+              onHintInformationRender={this._onHintInformationRender.bind(this)}
+            />
+            <div className="variable-editor" style={{ height: variableHeight }}>
+              <div
+                className="variable-editor-title"
+                style={{ cursor: variableOpen ? 'row-resize' : 'n-resize' }}
+                onMouseDown={this._onVariableResizeStart.bind(this)}
+              >
+                Query Variables
+              </div>
+              <VariableEditor
+                value={this.state.variables}
+                onEdit={this._onEditVariables.bind(this)}
+              />
+            </div>
+          </div>
+          <div className="resultWrap">
+            <ResultViewer ref="result" value={this.state.response} />
+            {footer}
+          </div>
+        </div>
+        <div className="docExplorerWrap">
+          <DocExplorer
+            ref="docExplorer"
+            schema={this.state.schema}
+            typeName={this.state.typeToExplore}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Private methods
+
+  _fetchQuery(query, variables, cb) {
+    this.props.fetcher({ query, variables }).then(cb).catch(error => {
+      this.setState({ response: JSON.stringify(error, null, 2) });
+    });
+  }
+
+  _runEditorQuery() {
+    this._editorQueryID++;
+    var queryID = this._editorQueryID;
+
+    this.autoCompleteLeafs();
+
+    this._fetchQuery(this.state.query, this.state.variables, result => {
+      if (queryID === this._editorQueryID) {
+        this.setState({ response: JSON.stringify(result, null, 2) });
+      }
+    });
+  }
+
+  _onEditQuery(value) {
+    window.localStorage.setItem('query', value);
+    this.setState({ query: value });
+    if (this.props.onEditQuery) {
+      return this.props.onEditQuery(value);
+    }
+  }
+
+  _onEditVariables(value) {
+    window.localStorage.setItem('variables', value);
+    this.setState({ variables: value });
+    if (this.props.onEditVariables) {
+      this.props.onEditVariables(value);
     }
   }
 
@@ -170,121 +292,40 @@ export class GraphiQL extends React.Component {
     }
   }
 
-  _onUpdate() {
-    this.forceUpdate();
-  }
-
-  _onEditQuery(value) {
-    this.setState({ query: value });
-    window.localStorage.setItem('query', value);
-  }
-
-  _onVariablesEdit(value) {
-    this.variablesString = value;
-    window.localStorage.setItem('variables', value);
-  }
-
-  render() {
-    var children = [];
-    React.Children.forEach(this.props.children, child => {
-      children.push(child);
-    });
-
-    var logo = find(children, child => child.type === GraphiQL.Logo) ||
-      <GraphiQL.Logo />;
-
-    var toolbar = find(children, child => child.type === GraphiQL.Toolbar);
-    var footer = find(children, child => child.type === GraphiQL.Footer);
-
-    var variableOpen = this.state.variableEditorOpen;
-    var variableHeight = variableOpen ? this.state.variableEditorHeight : null;
-
-    return (
-      <div id="graphiql-container">
-        <div className="topBar">
-          {logo}
-          <ExecuteButton onClick={this._runEditorQuery.bind(this)} />
-          {toolbar}
-        </div>
-        <div
-          ref="editorBar"
-          className="editorBar"
-          onMouseDown={this.onResizeStart.bind(this)}
-        >
-          <div className="queryWrap" style={{ flex: this.state.editorFlex }}>
-            <QueryEditor
-              ref="queryEditor"
-              schema={this.state.schema}
-              value={this.state.query}
-              onEdit={this._onEditQuery.bind(this)}
-              onHintInformationRender={this._onHintInformationRender.bind(this)}
-            />
-            <div className="variable-editor" style={{ height: variableHeight }}>
-              <div
-                className="variable-editor-title"
-                style={{ cursor: variableOpen ? 'row-resize' : 'n-resize' }}
-                onMouseDown={this.onVariableResizeStart.bind(this)}
-              >
-                Query Variables
-              </div>
-              <VariableEditor
-                value={this.variablesString}
-                onEdit={this._onVariablesEdit.bind(this)}
-              />
-            </div>
-          </div>
-          <div className="resultWrap">
-            <ResultViewer ref="result" value={this.state.response} />
-            {footer}
-          </div>
-        </div>
-        <div className="docExplorerWrap">
-          <DocExplorer
-            ref="docExplorer"
-            schema={this.state.schema}
-            typeName={this.state.typeToExplore}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  onResizeStart(downEvent) {
-    if (this.mouseMoveListener || !this.didClickDragBar(downEvent)) {
+  _onResizeStart(downEvent) {
+    if (!this._didClickDragBar(downEvent)) {
       return;
     }
-    this.mouseOffset = downEvent.clientX - getLeft(downEvent.target);
+
     downEvent.preventDefault();
-    this.mouseMoveListener = moveEvent => {
+
+    var offset = downEvent.clientX - getLeft(downEvent.target);
+
+    var onMouseMove = moveEvent => {
       if (moveEvent.buttons === 0) {
-        this.onResizeEnd();
-      } else {
-        this.onResize(moveEvent);
+        return onMouseUp();
       }
+
+      var editorBar = React.findDOMNode(this.refs.editorBar);
+      var leftSize = moveEvent.clientX - getLeft(editorBar) - offset;
+      var rightSize = editorBar.clientWidth - leftSize;
+      this.setState({ editorFlex: leftSize / rightSize });
     };
-    this.mouseUpListener = () => {
-      this.onResizeEnd();
+
+    var onMouseUp = () => {
+      window.localStorage.setItem('editorFlex', this.state.editorFlex);
+
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      onMouseMove = null;
+      onMouseUp = null;
     };
-    document.addEventListener('mousemove', this.mouseMoveListener);
-    document.addEventListener('mouseup', this.mouseUpListener);
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   }
 
-  onResizeEnd() {
-    window.localStorage.setItem('editorFlex', this.state.editorFlex);
-    document.removeEventListener('mousemove', this.mouseMoveListener);
-    document.removeEventListener('mouseup', this.mouseUpListener);
-    this.mouseMoveListener = null;
-    this.mouseUpListener = null;
-  }
-
-  onResize(event) {
-    var editorBar = React.findDOMNode(this.refs.editorBar);
-    var leftSize = event.clientX - getLeft(editorBar) - this.mouseOffset;
-    var rightSize = editorBar.clientWidth - leftSize;
-    this.setState({ editorFlex: leftSize / rightSize });
-  }
-
-  didClickDragBar(event) {
+  _didClickDragBar(event) {
     // Only for primary unmodified clicks
     if (event.button !== 0 || event.ctrlKey) {
       return false;
@@ -305,75 +346,55 @@ export class GraphiQL extends React.Component {
     return false;
   }
 
-  onVariableResizeStart(downEvent) {
+  _onVariableResizeStart(downEvent) {
+    downEvent.preventDefault();
+
+    var didMove = false;
     var wasOpen = this.state.variableEditorOpen;
     var hadHeight = this.state.variableEditorHeight;
-    if (!wasOpen) {
-      this.setState({
-        variableEditorOpen: true,
-        variableEditorHeight: 30,
-      });
-    }
-    this.mouseOffset = downEvent.clientY - getTop(downEvent.target);
-    downEvent.preventDefault();
-    var didMove = false;
-    this.mouseMoveListener = moveEvent => {
-      didMove = true;
+    var offset = downEvent.clientY - getTop(downEvent.target);
+
+    var onMouseMove = moveEvent => {
       if (moveEvent.buttons === 0) {
-        this.onVariableResizeEnd();
-      } else {
-        this.onVariableResize(moveEvent);
+        return onMouseUp();
       }
-    };
-    this.mouseUpListener = upEvent => {
-      upEvent.preventDefault();
-      if (!didMove) {
-        var isOpen = !wasOpen;
-        window.localStorage.setItem('variableEditorOpen', isOpen);
+
+      didMove = true;
+
+      var editorBar = React.findDOMNode(this.refs.editorBar);
+      var topSize = moveEvent.clientY - getTop(editorBar) - offset;
+      var bottomSize = editorBar.clientHeight - topSize;
+      if (bottomSize < 60) {
         this.setState({
-          variableEditorOpen: isOpen,
-          variableEditorHeight: hadHeight,
+          variableEditorOpen: false,
+          variableEditorHeight: hadHeight
         });
-
-        // Simulate a window resize event so any CodeMirror instances become
-        // properly rendered.
-        window.dispatchEvent(new Event('resize'));
       } else {
-        this.onVariableResizeEnd();
+        this.setState({
+          variableEditorOpen: true,
+          variableEditorHeight: bottomSize
+        });
       }
     };
-    document.addEventListener('mousemove', this.mouseMoveListener);
-    document.addEventListener('mouseup', this.mouseUpListener);
-  }
 
-  onVariableResizeEnd() {
-    if (this.state.variableEditorHeight === 30) {
-      window.localStorage.setItem('variableEditorHeight', 200);
-      this.setState({ variableEditorOpen: false, variableEditorHeight: 200 });
-    } else {
-      window.localStorage.setItem(
-        'variableEditorHeight',
-        this.state.variableEditorHeight
-      );
-    }
-    document.removeEventListener('mousemove', this.mouseMoveListener);
-    document.removeEventListener('mouseup', this.mouseUpListener);
-    this.mouseMoveListener = null;
-    this.mouseUpListener = null;
-  }
+    var onMouseUp = () => {
+      if (didMove) {
+        window.localStorage.setItem(
+          'variableEditorHeight',
+          this.state.variableEditorHeight
+        );
+      } else {
+        this.setState({ variableEditorOpen: !wasOpen });
+      }
 
-  onVariableResize(event) {
-    var editorBar = React.findDOMNode(this.refs.editorBar);
-    var topSize = event.clientY - getTop(editorBar) - this.mouseOffset;
-    var bottomSize = editorBar.clientHeight - topSize;
-    if (bottomSize < 60) {
-      bottomSize = 30;
-    }
-    this.setState({ variableEditorHeight: bottomSize });
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      onMouseMove = null;
+      onMouseUp = null;
+    };
 
-    // Simulate a window resize event so any CodeMirror instances become
-    // properly rendered.
-    window.dispatchEvent(new Event('resize'));
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   }
 }
 
