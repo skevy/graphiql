@@ -7,11 +7,11 @@
  */
 
 import React from 'react';
+import Marked from 'marked';
 import {
   GraphQLUnionType,
   GraphQLInterfaceType
 } from 'graphql/type';
-
 
 /**
  * DocExplorer
@@ -55,6 +55,17 @@ export class DocExplorer extends React.Component {
         Main Page
       </button>
     );
+
+    this.marked = Marked;
+  }
+
+  _renderMarkdown(text) {
+    return <span
+      dangerouslySetInnerHTML={
+        {__html: this.marked(text)}
+      }
+    />;
+    return this.marked(text);
   }
 
   _getTypeLink(type) {
@@ -100,6 +111,7 @@ export class DocExplorer extends React.Component {
   }
 
   _renderTypeValues(type) {
+    var _renderMarkdown = this._renderMarkdown;
     function renderValue(value) {
       return (
         <div className="doc-category-item">
@@ -107,7 +119,7 @@ export class DocExplorer extends React.Component {
             {value.name} = {value.value}
           </div>
           <div className="doc-value-description">
-            {value.description || 'Self descriptive.'}
+            {_renderMarkdown(value.description || 'Self descriptive.')}
           </div>
         </div>
       );
@@ -245,7 +257,7 @@ export class DocExplorer extends React.Component {
           {type.name}
         </div>
         <div className="doc-type-description">
-          {type.description || 'Self descriptive.'}
+          {this._renderMarkdown(type.description || 'Self descriptive.')}
         </div>
         {typesDef}
         {fieldsDef}
@@ -267,7 +279,7 @@ export class DocExplorer extends React.Component {
               <span className="doc-value-name">{arg.name}</span>
             </div>
             <div className="doc-value-description">
-              {arg.description || 'Self descriptive.'}
+              {this._renderMarkdown(arg.description || 'Self descriptive.')}
             </div>
           </div>
         );
@@ -290,7 +302,7 @@ export class DocExplorer extends React.Component {
           {this._getTypeLink(call.type)}
         </div>
         <div className="doc-type-description">
-          {call.description || 'Self descriptive.'}
+          {this._renderMarkdown(call.description || 'Self descriptive.')}
         </div>
         {argsDef}
       </div>
