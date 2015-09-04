@@ -15,6 +15,7 @@ import { DocExplorer } from './DocExplorer';
 import { introspectionQuery, buildClientSchema } from 'graphql/utilities';
 import find from 'graphql/jsutils/find';
 import { fillLeafs } from '../utility/fillLeafs';
+import { getLeft, getTop } from '../utility/elementPosition';
 
 
 /**
@@ -346,6 +347,10 @@ export class GraphiQL extends React.Component {
     return false;
   }
 
+  _onDocExplorerResizeStart(downEvent) {
+    downEvent.preventDefault();
+  }
+
   _onVariableResizeStart(downEvent) {
     downEvent.preventDefault();
 
@@ -447,23 +452,3 @@ const defaultQuery =
 # will appear in the pane to the right.
 
 `;
-
-function getLeft(initialElem) {
-  var pt = 0;
-  var elem = initialElem;
-  while (elem.offsetParent) {
-    pt += elem.offsetLeft;
-    elem = elem.offsetParent;
-  }
-  return pt;
-}
-
-function getTop(initialElem) {
-  var pt = 0;
-  var elem = initialElem;
-  while (elem.offsetParent) {
-    pt += elem.offsetTop;
-    elem = elem.offsetParent;
-  }
-  return pt;
-}
