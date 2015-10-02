@@ -26,6 +26,16 @@ html, body {
           flex: 1;
 }
 
+#graphiql-container .graphiql__redbox {
+  box-sizing: border-box;
+  font-family: sans-serif;
+  font-size: 1.2em;
+  padding: 15px;
+  flex: 1;
+  background: rgb(204, 0, 0);
+  color: white;
+}
+
 #graphiql-container .title {
   font-size: 18px;
 }

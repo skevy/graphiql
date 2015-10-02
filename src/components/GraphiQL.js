@@ -158,6 +158,7 @@ export class GraphiQL extends React.Component {
       schema: props.schema,
       query,
       variables,
+      error: false,
       response: props.response,
       editorFlex: this._storageGet('editorFlex') || 1,
       variableEditorOpen: Boolean(variables),
@@ -194,7 +195,12 @@ export class GraphiQL extends React.Component {
     if (!this.state.schema) {
       this._fetchQuery(introspectionQuery, null, result => {
         if (!result.data) {
-          this.setState({ response: JSON.stringify(result, null, 2) });
+          // we didn't get a schema, so we should alert the user so they can fix
+          this.setState({
+            error: 'No schema provided through props or introspection. ' +
+              'Please check your GraphQL endpoint.',
+            response: JSON.stringify(result, null, 2)
+          });
         } else {
           this.setState({ schema: buildClientSchema(result.data) });
         }
@@ -212,6 +218,16 @@ export class GraphiQL extends React.Component {
   }
 
   render() {
+    if (this.state.error !== false) {
+      return (
+        <div id="graphiql-container">
+          <div className="graphiql__redbox">
+            {this.state.error}
+          </div>
+        </div>
+      );
+    }
+
     var children = [];
     React.Children.forEach(this.props.children, child => {
       children.push(child);
